@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas 
+	xmlns:mx="http://www.adobe.com/2006/mxml" 
+	width="100%" 
+	minWidth="400" 
+	height="100%" 
+	minHeight="200"
+	initialize="init()"
+	xmlns:jwolib="http://www.jwolib.com/2006/mxml">
+	
+<mx:Script>
+    <![CDATA[
+    	import mx.rpc.events.ResultEvent;
+    	import vo.Calculation;
+    	import mx.containers.Panel;
+    	import mx.containers.VBox;
+    	import components.control.Requester;
+    	import mx.collections.ArrayCollection;
+		import mx.controls.*;
+		import mx.managers.*;
+        import mx.events.*;
+		import flash.events.*;
+		import flash.net.*;
+		
+		private var m_strDbToCrmUrl:String;
+		private var m_requester:Requester;
+		private var m_iAiStartNumber:int;
+		private var m_iCalcId:int;
+		private var m_sCalcName:String;
+		private var m_numCurrentDownload:Number = 0;			
+		[Bindable] private var m_filesCollection:ArrayCollection;
+		[Bindable] private var m_arrDownloadFiles:Array;
+		
+
+        [Bindable] private var m_aiStartNumbers:ArrayCollection = new ArrayCollection(
+            [ {label:"Start Level from -1", data:0}, 
+              {label:"Start Level from 201", data:200}, 
+              {label:"Start Level from 301", data:300} ]);
+
+		private function init():void
+	    {
+	    	m_requester = new Requester();
+	    	m_requester.crmMakerComponent = this;
+	    	m_requester.initConnection();
+	    	m_filesCollection = new ArrayCollection();
+			enableUI();
+			downloadCheck();
+	    }	
+	    		
+		public function crmFileListResultHandler(event:ResultEvent):void
+		{
+			var fileXmlList:XMLList = new XMLList(event.result.file);
+			m_filesCollection.removeAll();
+			for each(var item:XML in fileXmlList)
+			{
+				m_filesCollection.addItem({name:item.name, size:0});
+			}
+			
+        	listFiles.dataProvider = m_filesCollection;
+	        m_arrDownloadFiles = m_filesCollection.toArray();
+			enableUI();
+			downloadCheck();
+		}
+		
+		public function setMakingResultsData(makingCrmResponseXml:XML):void
+		{
+			listFiles.selectedItem.size = Number(makingCrmResponseXml..size);
+		}		
+
+		private function formatFileSize(numSize:Number):String 
+		{
+			var strReturn:String;
+			numSize = Number(numSize / 1000);
+			strReturn = String(numSize.toFixed(1) + " KB");
+			
+			if (numSize > 1000) 
+			{
+				numSize = numSize / 1000;
+				strReturn = String(numSize.toFixed(1) + " MB");
+				
+				if (numSize > 1000) 
+				{
+					numSize = numSize / 1000;
+					strReturn = String(numSize.toFixed(1) + " GB");
+				}
+			}				
+			return strReturn;
+		}
+
+		private function removeFiles():void 
+		{
+			var arrSelected:Array = listFiles.selectedIndices;
+			
+			if (arrSelected.length >= 1) 
+			{
+				for (var i:Number = 0; i < arrSelected.length; i++) 
+				{
+					m_arrDownloadFiles[Number(arrSelected[i])] = null;
+				}
+				
+				for (var j:Number = 0; j < m_arrDownloadFiles.length; j++) 
+				{
+					if (m_arrDownloadFiles[j] == null) 
+					{
+						m_arrDownloadFiles.splice(j, 1);
+						j--;
+					}
+				}
+				listFiles.dataProvider = m_arrDownloadFiles;
+				listFiles.selectedIndex = 0;					
+			}
+			updateProgBar();
+			scrollFiles();
+			downloadCheck();
+		}
+
+		private function downloadCheck():void 
+		{
+			if (m_arrDownloadFiles && m_arrDownloadFiles.length == 0) 
+			{
+				btnDb2Crm.enabled = false;
+				listFiles.verticalScrollPolicy = "off";
+			} 
+			else if(m_arrDownloadFiles && m_arrDownloadFiles.length != 0)
+			{
+				btnDb2Crm.enabled = true;
+				listFiles.verticalScrollPolicy = "on";
+			}
+		}
+		
+		private function disableUI():void 
+		{
+			btnAdd.enabled = false;
+			btnRemove.enabled = false;
+			btnDb2Crm.enabled = false;
+			btnCancel.enabled = true;
+			listFiles.enabled = false;
+			listFiles.verticalScrollPolicy = "off";
+		}
+		
+		private function enableUI():void 
+		{
+			btnAdd.enabled = true;
+			btnRemove.enabled = true;
+			btnDb2Crm.enabled = true;
+			btnCancel.enabled = false;
+			listFiles.enabled = true;
+			listFiles.verticalScrollPolicy = "on";
+		}
+		
+		private function scrollFiles():void 
+		{
+			listFiles.verticalScrollPosition = listFiles.selectedIndex;
+			listFiles.validateNow();
+		}
+
+		private function selectCalc(event:Event):void 
+		{
+			m_iCalcId = Number( ComboBox(event.target).selectedItem.@calcId );
+			m_sCalcName = ComboBox(event.target).selectedItem.calcName.toString();
+        } 			
+
+		private function selectAiStartNumber(event:Event):void 
+		{
+			m_iAiStartNumber = ComboBox(event.target).selectedItem.data;;
+        } 			
+
+        private function startProcess():void 
+        {
+			if (m_arrDownloadFiles && m_arrDownloadFiles.length > 0) 
+			{
+				disableUI();
+				listFiles.selectedIndex = m_numCurrentDownload;
+				scrollFiles();
+				
+	        	var params:Object = new Object();
+	        	params.calcId = m_iCalcId;
+	        	params.aiStateInitialNumber = m_iAiStartNumber;
+	        	params.fileName = listFiles.selectedItem.name;
+	        	
+	        	if(listFiles.selectedItem.name == "IN1R.INP")
+	        	{
+	        		m_requester.crmRalchenkoStructureRequest(params);
+	        	}
+	        	else if(listFiles.selectedItem.name == "IN1F.INP")
+	        	{
+	        		m_requester.crmFisherStructureRequest(params);
+	        	}
+	        	else
+	        	{
+	        		m_requester.crmTransitionsRequest(params);
+	        	}
+			}
+
+        }
+
+		private function clearDownload():void 
+		{
+			m_numCurrentDownload = 0;
+			updateProgBar();
+			enableUI();
+		}
+		
+		private function onDownloadCanceled():void 
+		{
+			clearDownload();
+			dispatchEvent(new Event("downloadCancel"));
+		}
+		
+		private function onDownloadProgress(event:ProgressEvent):void 
+		{
+			var numPerc:Number = Math.round((event.bytesLoaded / event.bytesTotal) * 100);
+			updateProgBar(numPerc);
+			var evt:ProgressEvent = new ProgressEvent("downloadProgress", false, false, event.bytesLoaded, event.bytesTotal);
+			dispatchEvent(evt);
+		}
+		
+		private function updateProgBar(numPerc:Number = 0):void 
+		{
+			var strLabel:String = (m_numCurrentDownload + 1) + "/" + m_arrDownloadFiles.length;
+			strLabel = (m_numCurrentDownload + 1 <= m_arrDownloadFiles.length && numPerc > 0 && numPerc < 100) ? numPerc + "% - " + strLabel : strLabel;
+			strLabel = (m_numCurrentDownload + 1 == m_arrDownloadFiles.length && numPerc == 100) ? "Download Complete - " + strLabel : strLabel;
+			strLabel = (m_arrDownloadFiles.length == 0) ? "" : strLabel;
+			progBar.label = strLabel;
+			progBar.setProgress(numPerc, 100);
+			progBar.validateNow();
+		}
+		
+		public function onDownloadComplete():void 
+		{
+			m_numCurrentDownload++;				
+			if (m_numCurrentDownload < m_arrDownloadFiles.length) 
+			{
+				startProcess();
+			} 
+			else 
+			{
+				enableUI();
+				clearDownload();
+				dispatchEvent(new Event("downloadComplete"));
+			}
+		}
+		
+		private function onDownloadIoError(event:IOErrorEvent):void 
+		{
+			clearDownload();
+			var evt:IOErrorEvent = new IOErrorEvent("downloadIoError", false, false, event.text);
+			dispatchEvent(evt);
+		}
+		
+		private function onDownloadSecurityError(event:SecurityErrorEvent):void 
+		{
+			clearDownload();
+			var evt:SecurityErrorEvent = new SecurityErrorEvent("downloadSecurityError", false, false, event.text);
+			dispatchEvent(evt);
+		}
+
+		public function set db2CrmUrl(strDbToCrmUrl:String):void 
+		{
+			m_strDbToCrmUrl = strDbToCrmUrl;
+		}
+		
+		private function addFiles(event:Event):void 
+		{
+			crmFileListRequest.send();
+        } 			
+
+    ]]>
+ </mx:Script>
+ 
+   <mx:HTTPService 
+  	id="crmFileListRequest" 
+  	useProxy="false" 
+  	resultFormat="e4x"
+    result="crmFileListResultHandler(event)" 
+    url="data/crm.xml"
+    />
+
+    <jwolib:Pod 
+    	id="pod" 
+		title="Make CRM" 
+		titleIcon="@Embed('assets/makeCRM.gif')"
+        width="100%" 
+        height="100%" 
+        headerHeight="40"
+        >
+        
+        <jwolib:titleBarChildren>
+            <mx:ComboBox 
+            	id="aiCbx"
+            	labelField="label"
+				prompt="Autoionizing start #..."       			
+       			change="selectAiStartNumber(event);"
+       			selectedIndex="-1"
+       			dataProvider="{m_aiStartNumbers}"
+            	/>
+            <mx:ComboBox 
+            	id="calcCbx"
+				prompt="Please select a Project..."       			
+       			change="selectCalc(event);"
+       			selectedIndex="-1"
+       			labelField="calcName"
+            	/>
+        </jwolib:titleBarChildren>	
+	<mx:Canvas width="100%" height="100%">
+		<mx:DataGrid 
+			id="listFiles" 
+			width="100%"
+			left="0" 
+			top="0" 
+			bottom="0" 
+			right="0"
+			verticalScrollPolicy="on"
+			draggableColumns="false" 
+			resizableColumns="false" 
+			sortableColumns="false"
+			>
+			<mx:columns>
+				<mx:DataGridColumn headerText="File name" dataField="name" textAlign="left"/>
+				<mx:DataGridColumn headerText="Size" dataField="size" textAlign="right"/>
+			</mx:columns>
+		</mx:DataGrid>
+	</mx:Canvas>
+	<mx:ControlBar horizontalAlign="center" verticalAlign="middle">
+		<mx:Button id="btnAdd" toolTip="Add file(s)" click="addFiles(event)" icon="@Embed('assets/add.png')" width="26"/>
+		<mx:Button id="btnRemove" toolTip="Remove file(s)" click="removeFiles()" icon="@Embed('assets/delete.png')" width="26"/>
+		<mx:ProgressBar id="progBar" mode="manual" label="" labelPlacement="center" width="100%"/>
+		<mx:Button id="btnCancel" toolTip="Cancel download" icon="@Embed('assets/cancel2.png')" width="26" click="onDownloadCanceled()"/>
+		<mx:Button 
+			width="26" 
+			toolTip="Make CRM input files" 
+			id="btnDb2Crm" 
+			click="startProcess()" 
+			icon="@Embed('assets/makeCRM.gif')"
+			/>
+	</mx:ControlBar>
+	</jwolib:Pod>	
+</mx:Canvas>	

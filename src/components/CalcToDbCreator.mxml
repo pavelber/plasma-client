@@ -1,0 +1,475 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas 
+	xmlns:mx="http://www.adobe.com/2006/mxml" 
+	width="100%" 
+	minWidth="400" 
+	height="100%" 
+	minHeight="200"
+	creationComplete="init()"
+	xmlns:jwolib="http://www.jwolib.com/2006/mxml"
+	>
+
+<mx:Script>
+    <![CDATA[
+    	import constants.ServerConstants;
+    	import components.control.Requester;
+    	import vo.FileNode;
+    	import vo.Ion;
+    	import vo.Calculation;
+    	import mx.collections.ArrayCollection;
+	    import flash.filesystem.*;
+		import mx.controls.*;
+		import mx.managers.*;
+        import mx.events.*;
+		import flash.events.*;
+		import flash.net.*;
+		
+		private var m_structureInserterUrl:String;
+		private var m_calcCreatorbUrl:String;
+		private var m_insertFile:Object;
+		private var m_numCurrentInsert:Number = 0;			
+		private var m_requester:Requester;
+		private static var m_bytesTotal:Number;
+
+		[Bindable] private var m_currentCalc:Calculation;
+		[Bindable] private var calculationsXML:XML;
+		[Bindable] private var dpCollection:ArrayCollection;
+		[Bindable] private var m_filesCollection:ArrayCollection;
+		[Bindable] private var m_arrUploadFiles:Array;
+		[Bindable] private var m_bytesLoaded:Number = 0;
+
+
+		private function init():void
+	    {
+	    	m_requester = new Requester();
+	    	m_requester.calcCreatorComponent = this;
+	    	loadXML();
+	    }
+
+	    public function get currentCalc():Calculation
+	    {
+	    	return m_currentCalc;
+	    }
+
+		public function set calcCreatorUrl(calcCreatorbUrl:String):void 
+		{
+			m_calcCreatorbUrl = calcCreatorbUrl;
+		}
+
+		public function get calcCreatorUrl():String 
+		{
+			return m_calcCreatorbUrl;
+		}
+
+		private function loadXML():void
+		{
+			var file:File = ServerConstants.HISTORY_FILE;
+			
+		    if(file.exists && file.nativePath.indexOf("calculations.xml") != -1)
+		    {
+			    var fs:FileStream = new FileStream();
+				fs.open(file, FileMode.READ);
+				calculationsXML = XML(fs.readUTFBytes(fs.bytesAvailable));
+				fs.close();
+				setData(calculationsXML);
+		    }
+		    else
+		    {
+		    	Alert.show("You have not selected an xml file called 'calculations.xml'");
+		    }
+		}
+		
+		private function setData(node:XML):void
+		{
+			dpCollection = new ArrayCollection();
+			
+			for each(var calcXml:XML in node.elements())
+			{
+				var calcName:String = calcXml.name;
+				var calc:Calculation = new Calculation(calcName);
+				
+				for each(var ionXml:XML in calcXml.ions.elements())
+				{
+					var ionCharge:Number = Number(ionXml.@num);
+					var ion:Ion = new Ion(Number(ionCharge));
+					
+					for each(var facFile:XML in calcXml.ions.ion.(@num == ionCharge).fac.elements())
+					{
+						var facItem:Object = new Object();
+						facItem.size = facFile.size;
+						facItem.name = facFile.name;
+						facItem.calc = calcName;
+						facItem.type = facFile.type;
+						facItem.ion = ionCharge;
+						var facNode:FileNode = new FileNode(facItem);
+						var facFlagUpload:Boolean = false;
+						var facFlagInser:Boolean = false;
+						if(String(facFile.wasUploaded) == "true")
+						{
+							facFlagUpload = true;
+						}
+						if(String(facFile.wasUploaded) == "false")
+						{
+							facFlagUpload = false;
+						}
+						facNode.wasUploaded = facFlagUpload;
+						
+						if(String(facFile.wasInserted) == "true")
+						{
+							facFlagInser = true;
+						}
+						if(String(facFile.wasInserted) == "false")
+						{
+							facFlagInser = false;
+						}
+						facNode.wasInserted = facFlagInser;
+						
+						ion.addFileNode(facNode);
+					}
+					
+					for each(var fitFile:XML in calcXml.ions.ion.(@num == ionCharge).fit.elements())
+					{
+						var fitItem:Object = new Object();
+						fitItem.size = fitFile.size;
+						fitItem.name = fitFile.name;
+						fitItem.calc = calcName;
+						fitItem.type = fitFile.type;
+						fitItem.ion = ionCharge;
+						
+						var fitNode:FileNode = new FileNode(fitItem);
+						
+						var fitFlaglagUpload:Boolean = false;
+						var fitFlaglagInsert:Boolean = false;
+						if(String(fitFile.wasUploaded) == "true")
+						{
+							fitFlaglagUpload = true;
+						}
+						fitNode.wasUploaded = fitFlaglagUpload;
+						
+						if(String(fitFile.wasInserted) == "true")
+						{
+							fitFlaglagInsert = true;
+						}
+						fitNode.wasInserted = fitFlaglagInsert;
+						ion.addFileNode(fitNode);
+					}
+					calc.addIon(ion);
+				}
+				dpCollection.addItem(calc);
+			}
+			calcCbx.dataProvider = dpCollection;
+		}		
+			
+		public function set structureInserterUrl(strStructureInserterUrl:String):void 
+		{
+			m_structureInserterUrl = strStructureInserterUrl;
+		}
+			
+		public function get structureInserterUrl():String 
+		{
+			return m_structureInserterUrl;
+		}
+
+		private function formatFileSize(numSize:Number):String 
+		{
+			var strReturn:String;
+			numSize = Number(numSize / 1000);
+			strReturn = String(numSize.toFixed(1) + " KB");
+			
+			if (numSize > 1000) 
+			{
+				numSize = numSize / 1000;
+				strReturn = String(numSize.toFixed(1) + " MB");
+				
+				if (numSize > 1000) 
+				{
+					numSize = numSize / 1000;
+					strReturn = String(numSize.toFixed(1) + " GB");
+				}
+			}				
+			return strReturn;
+		}
+		
+		private function removeFiles():void 
+		{
+			var arrSelected:Array = listFiles.selectedIndices;
+			
+			if (arrSelected.length >= 1) 
+			{
+				for (var i:Number = 0; i < arrSelected.length; i++) 
+				{
+					m_arrUploadFiles[Number(arrSelected[i])] = null;
+				}
+				
+				for (var j:Number = 0; j < m_arrUploadFiles.length; j++) 
+				{
+					if (m_arrUploadFiles[j] == null) 
+					{
+						m_arrUploadFiles.splice(j, 1);
+						j--;
+					}
+				}
+				listFiles.dataProvider = m_arrUploadFiles;
+				listFiles.selectedIndex = 0;					
+			}
+			updateProgBar();
+			scrollFiles();
+			insertingCheck();
+		}
+		
+		private function insertingCheck():void 
+		{
+			if (m_arrUploadFiles.length == 0) 
+			{
+				btnFac2Db.enabled = false;
+				listFiles.verticalScrollPolicy = "off";
+			} 
+			else 
+			{
+				btnFac2Db.enabled = true;
+				listFiles.verticalScrollPolicy = "on";
+			}
+		}
+		
+		private function disableUI():void 
+		{
+			btnAdd.enabled = false;
+			btnRemove.enabled = false;
+			btnFac2Db.enabled = false;
+			btnCancel.enabled = true;
+			listFiles.enabled = false;
+			listFiles.verticalScrollPolicy = "off";
+		}
+		
+		private function enableUI():void 
+		{
+			btnAdd.enabled = true;
+			btnRemove.enabled = true;
+			btnFac2Db.enabled = true;
+			btnCancel.enabled = false;
+			listFiles.enabled = true;
+			listFiles.verticalScrollPolicy = "on";
+		}
+		
+		private function scrollFiles():void 
+		{
+			listFiles.verticalScrollPosition = listFiles.selectedIndex;
+			listFiles.validateNow();
+		}
+		
+		private function onCreateCalc():void
+		{
+			var params:Object = new Object();
+			params.calcName = m_currentCalc.calcName;
+			m_requester.calcCreatorRequest(params);
+		}
+		
+		private function startInserting():void 
+		{
+			if (m_arrUploadFiles && m_arrUploadFiles.length > 0) 
+			{
+				disableUI();
+				listFiles.selectedIndex = m_numCurrentInsert;
+				scrollFiles();
+			    m_insertFile = listFiles.selectedItem;
+				var params:Object = new Object();
+				params.calcName = listFiles.selectedItem.calc;
+				params.ionName = listFiles.selectedItem.ion;
+				params.fileName = listFiles.selectedItem.name;
+				m_requester.structureInserterRequest(params);
+			}
+		}
+		
+		public function clearInserting():void 
+		{
+			if(m_insertFile)
+			{
+//				cancel();
+				m_numCurrentInsert = 0;
+				m_bytesLoaded = 0;
+				updateProgBar();
+				enableUI();
+			}
+		}
+		
+		private function onInsertingCanceled():void 
+		{
+			clearInserting();
+		}
+		
+		public function onInsertingProgress(bytesLoaded:Number):void 
+		{
+			m_bytesLoaded += bytesLoaded;
+			var numPerc:Number = Math.round((m_bytesLoaded / m_bytesTotal) * 100);
+			updateProgBar(numPerc);
+			var evt:ProgressEvent = new ProgressEvent("uploadProgress", false, false, m_bytesLoaded, m_bytesTotal);
+			dispatchEvent(evt);
+		}
+		
+		private function updateProgBar(numPerc:Number = 0):void 
+		{
+			var strLabel:String = (m_numCurrentInsert + 1) + "/" + m_arrUploadFiles.length;
+			strLabel = (m_numCurrentInsert + 1 <= m_arrUploadFiles.length && numPerc > 0 && numPerc < 100) ? numPerc + "% - " + strLabel : strLabel;
+			strLabel = (m_numCurrentInsert + 1 == m_arrUploadFiles.length && numPerc == 100) ? "Upload Complete - " + strLabel : strLabel;
+			strLabel = (m_arrUploadFiles.length == 0) ? "" : strLabel;
+			progBar.label = strLabel;
+			progBar.setProgress(numPerc, 100);
+			progBar.validateNow();
+		}
+		
+		private function markInsertedFile():void
+		{
+			var ion:Ion = m_currentCalc.getIon(Number(m_insertFile.ion));
+			var fileNode:FileNode = ion.getFileNode(m_insertFile.name, "fac");
+			fileNode.wasInserted = true;
+		}
+		
+		private function writeCalcsXml():void
+		{
+			var file:File = ServerConstants.HISTORY_FILE;
+			var newXMLStr:String = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + "\n" + 
+									"<calculations>" + "\n";
+			
+			for each(var calc:Calculation in dpCollection )
+			{
+				var sCalc:String = calc.toXml();
+				newXMLStr += sCalc;
+			}
+			
+			newXMLStr += "</calculations>";
+			var fs:FileStream = new FileStream();
+			fs.open(file, FileMode.WRITE);
+			fs.writeUTFBytes(newXMLStr);
+			fs.close();
+		}
+		
+		public function onInsertingComplete():void 
+		{
+			markInsertedFile();
+			
+			m_numCurrentInsert++;				
+			if (m_numCurrentInsert < m_arrUploadFiles.length) 
+			{
+				startInserting();
+			} 
+			else 
+			{
+				writeCalcsXml();
+				enableUI();
+				clearInserting();
+				Alert.show('Data have been inserted.', 'Inserting successful')
+			}
+		}
+		
+		private function selectCalc(event:Event):void 
+		{
+			m_currentCalc = Calculation(ComboBox(event.target).selectedItem);
+        } 	
+		
+		private function addFacFileNodes():void
+		{
+			m_bytesTotal = 0;
+			m_filesCollection = new ArrayCollection();
+			if(!m_currentCalc) return;
+			
+			var startIon:int = m_currentCalc.startIon;
+			var endIon:int = m_currentCalc.endIon;
+			
+			for(var i:int = startIon; i < (endIon + 1); i++)
+			{
+				var ion:Ion = m_currentCalc.getIon(i);
+				var fac:ArrayCollection = ion.facCollection;
+				
+				for each(var facItem:FileNode in fac)
+				{
+					if(facItem.fileName == "fac.lev")
+					{
+						var item:Object = new Object();
+						m_bytesTotal += facItem.fileSize;
+						item.size = facItem.fileSize;
+						//item.size = formatFileSize(facItem.fileSize);
+						item.name = facItem.fileName;
+						item.calc = m_currentCalc.calcName;
+						item.type = facItem.fileType;
+						item.ion = i;
+						item.upload = facItem.wasUploaded;
+						item.insert = facItem.wasInserted;
+						m_filesCollection.addItem(item);
+						m_filesCollection.refresh();
+					}
+				}
+			}
+        	m_arrUploadFiles = m_filesCollection.toArray();
+        	listFiles.dataProvider = m_arrUploadFiles;
+		}
+
+    ]]>
+ </mx:Script>
+
+    <jwolib:Pod 
+    	id="pod" 
+		title="Create project to Atomic" 
+		titleIcon="@Embed('assets/fac2db.gif')"
+        width="100%" 
+        height="100%" 
+        headerHeight="40"
+        >
+        <jwolib:titleBarChildren>
+        
+            <mx:Button 
+            	id="createCalcBtn"
+            	icon="@Embed('assets/create_calc.png')"
+            	toolTip="Create calculation account to Atomic"  
+            	width="25" 
+            	height="25"
+            	click="onCreateCalc()"
+            	/>
+            	
+            <mx:ComboBox 
+            	id="calcCbx"
+            	toolTip="Select calculation"  
+            	labelField="calcName"
+				prompt="Please select a Project..."       			
+				close="selectCalc(event);"
+       			selectedIndex="-1"
+            	/>
+        </jwolib:titleBarChildren>	
+	<mx:Canvas width="100%" height="100%">
+		<mx:DataGrid 
+			id="listFiles" 
+			width="100%"
+			left="0" 
+			top="0" 
+			bottom="0" 
+			right="0"
+			verticalScrollPolicy="on"
+			draggableColumns="false" 
+			resizableColumns="false" 
+			sortableColumns="false"
+			>
+			<mx:columns>
+				<mx:DataGridColumn headerText="Calculation" dataField="calc" width="145"  textAlign="left"/>
+				<mx:DataGridColumn headerText="Ion" dataField="ion"  width="35" textAlign="right"/>
+				<mx:DataGridColumn headerText="Process" dataField="type" width="70" textAlign="right"/>
+				<mx:DataGridColumn headerText="File" dataField="name"  width="70" textAlign="right"/>
+				<mx:DataGridColumn headerText="Size" dataField="size"   width="70" textAlign="right"/>
+				<mx:DataGridColumn headerText="Uploaded" dataField="upload"   width="70" textAlign="right"/>
+				<mx:DataGridColumn headerText="Inserted" dataField="insert"   width="70" textAlign="right"/>
+			</mx:columns>
+		</mx:DataGrid>
+	</mx:Canvas>
+	<mx:ControlBar horizontalAlign="center" verticalAlign="middle">
+		<mx:Button id="btnAdd" enabled="true" toolTip="Add calculation file(s)" click="addFacFileNodes()" icon="@Embed('assets/add.png')" width="26"/>
+		<mx:Button id="btnRemove" toolTip="Remove file(s)" click="removeFiles()" icon="@Embed('assets/delete.png')" width="26"/>
+		<mx:ProgressBar id="progBar" mode="manual" label="" labelPlacement="center" width="100%"/>
+		<mx:Button id="btnCancel" toolTip="Cancel upload" icon="@Embed('assets/cancel2.png')" width="26" click="onInsertingCanceled()"/>
+		<mx:Button 
+			width="26" 
+			toolTip="Insert FAC results to DataBase" 
+			id="btnFac2Db" 
+			click="startInserting()" 
+			icon="@Embed('assets/fac2db.gif')"
+			/>
+	</mx:ControlBar>	
+</jwolib:Pod>
+</mx:Canvas>	

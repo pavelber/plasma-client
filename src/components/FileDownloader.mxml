@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas 
+	xmlns:mx="http://www.adobe.com/2006/mxml" 
+	width="100%" 
+	minWidth="400" 
+	height="100%" 
+	minHeight="200"
+	creationComplete="init()"
+	xmlns:jwolib="http://www.jwolib.com/2006/mxml">
+	
+	<mx:Metadata>
+		[Event(name="downloadComplete", type="flash.events.Event")]
+		[Event(name="downloadProgress", type="flash.events.ProgressEvent")]
+		[Event(name="downloadCancel", type="flash.events.Event")]
+		[Event(name="downloadIOError", type="flash.events.IOErrorEvent")]
+		[Event(name="downloadSecurityError", type="flash.events.SecurityErrorEvent")]
+	</mx:Metadata>
+
+<mx:Script>
+    <![CDATA[
+    	import mx.core.Application;
+    	import mx.collections.ArrayCollection;
+	    import flash.filesystem.*;
+		import mx.controls.*;
+		import mx.managers.*;
+        import mx.events.*;
+		import flash.events.*;
+		import flash.net.*;
+		
+		import components.control.Requester;
+		import mx.controls.Label;
+		import mx.controls.Button;
+		import mx.controls.Alert;
+			
+		import mx.controls.Spacer;
+		import mx.containers.ControlBar;
+		import mx.containers.VBox;
+		import mx.controls.ComboBox;
+		import components.control.Requester;
+
+		private var m_strDownloadUrl:String;
+		private var m_downloadFile:File;
+		private var m_numCurrentDownload:Number = 0;			
+		private var m_fileLoader:File = new flash.filesystem.File();
+		private var m_sCalcName:String;
+
+		[Bindable] private var m_filesCollection:ArrayCollection;
+		[Bindable] private var m_arrDownloadFiles:Array;
+		[Bindable] private var m_dir:File;
+		private var m_requester:Requester;
+
+		private function init():void
+	    {
+	    	m_requester = new Requester();
+	    	m_requester.downloaderComponent = this;
+	    	m_requester.initConnection();
+	    	m_filesCollection = new ArrayCollection();
+			enableUI();
+			downloadCheck();
+	    }	
+	    
+	    public function get dir():String
+	    {
+	    	return m_dir.nativePath;
+	    }		
+
+		// Set downloadUrl
+		public function set downloadUrl(strDownloadUrl:String):void 
+		{
+			m_strDownloadUrl = strDownloadUrl;
+		}
+		
+		public function setData(data:XML):void
+		{
+			if(data)
+			{
+				m_filesCollection.removeAll();
+				var fileXmlList:XMLList = data.file;
+				for each(var item:XML in fileXmlList)
+				{
+					m_filesCollection.addItem({name:item.name, size:item.size});
+				}
+				
+	        	listFiles.dataProvider = m_filesCollection;
+		        m_arrDownloadFiles = m_filesCollection.toArray();
+				enableUI();
+				downloadCheck();
+			}
+		}
+
+		private function formatFileSize(numSize:Number):String 
+		{
+			var strReturn:String;
+			numSize = Number(numSize / 1000);
+			strReturn = String(numSize.toFixed(1) + " KB");
+			
+			if (numSize > 1000) 
+			{
+				numSize = numSize / 1000;
+				strReturn = String(numSize.toFixed(1) + " MB");
+				
+				if (numSize > 1000) 
+				{
+					numSize = numSize / 1000;
+					strReturn = String(numSize.toFixed(1) + " GB");
+				}
+			}				
+			return strReturn;
+		}
+
+		private function removeFiles():void 
+		{
+			var arrSelected:Array = listFiles.selectedIndices;
+			
+			if (arrSelected.length >= 1) 
+			{
+				for (var i:Number = 0; i < arrSelected.length; i++) 
+				{
+					m_arrDownloadFiles[Number(arrSelected[i])] = null;
+				}
+				
+				for (var j:Number = 0; j < m_arrDownloadFiles.length; j++) 
+				{
+					if (m_arrDownloadFiles[j] == null) 
+					{
+						m_arrDownloadFiles.splice(j, 1);
+						j--;
+					}
+				}
+				listFiles.dataProvider = m_arrDownloadFiles;
+				listFiles.selectedIndex = 0;					
+			}
+			updateProgBar();
+			scrollFiles();
+			downloadCheck();
+		}
+		
+		// Called to check if there is at least one file to download
+		private function downloadCheck():void 
+		{
+			if (m_arrDownloadFiles && m_arrDownloadFiles.length == 0) 
+			{
+				btnDownload.enabled = false;
+				listFiles.verticalScrollPolicy = "off";
+			} 
+			else if(m_arrDownloadFiles && m_arrDownloadFiles.length != 0)
+			{
+				btnDownload.enabled = true;
+				listFiles.verticalScrollPolicy = "on";
+			}
+		}
+		
+		// Disable UI control
+		private function disableUI():void 
+		{
+			btnAdd.enabled = false;
+			btnRemove.enabled = false;
+			btnDownload.enabled = false;
+			btnCancel.enabled = true;
+			listFiles.enabled = false;
+			listFiles.verticalScrollPolicy = "off";
+		}
+		
+		// Enable UI control
+		private function enableUI():void 
+		{
+			btnAdd.enabled = true;
+			btnRemove.enabled = true;
+			btnDownload.enabled = true;
+			btnCancel.enabled = false;
+			listFiles.enabled = true;
+			listFiles.verticalScrollPolicy = "on";
+		}
+		
+		// Scroll listFiles to selected row
+		private function scrollFiles():void 
+		{
+			listFiles.verticalScrollPosition = listFiles.selectedIndex;
+			listFiles.validateNow();
+		}
+
+		private function openDirectory(event:Event):void
+		{
+			try 
+			{
+				m_fileLoader.browseForDirectory('');
+				m_fileLoader.addEventListener(Event.SELECT, selectDirectory);
+			}
+			catch (error:Error)
+			{
+    			trace("Failed:", error.message)
+			}
+		}
+		
+		private function selectDirectory(event:Event):void
+		{
+			m_dir = null;
+		    m_dir = event.target as File;
+		    
+		    if(m_filesCollection)
+		    {
+		    	startDownload( );
+				enableUI();
+				downloadCheck();
+		    }
+		}
+				
+		// Called to download file based on current download number
+		private function startDownload():void 
+		{
+			if (m_arrDownloadFiles && m_arrDownloadFiles.length > 0) 
+			{
+				disableUI();
+				listFiles.selectedIndex = m_numCurrentDownload;
+				scrollFiles();
+				
+				var params:Object = new Object();
+				params.calcName = m_sCalcName;
+				params.fileName = listFiles.selectedItem.name;
+				m_requester.fileDownloadRequest(params);
+			}
+		}
+		
+		// Cancel and clear eventlisteners on last download
+		private function clearDownload():void 
+		{
+			if(m_downloadFile)
+			{
+				m_downloadFile.removeEventListener(ProgressEvent.PROGRESS, onDownloadProgress);
+				m_downloadFile.removeEventListener(Event.COMPLETE, onDownloadComplete);
+				m_downloadFile.removeEventListener(IOErrorEvent.IO_ERROR, onDownloadIoError);
+				m_downloadFile.removeEventListener(SecurityErrorEvent.SECURITY_ERROR, onDownloadSecurityError);
+				m_downloadFile.cancel();
+				m_numCurrentDownload = 0;
+				updateProgBar();
+				enableUI();
+			}
+		}
+		
+		// Called on download cancel
+		private function onDownloadCanceled():void 
+		{
+			clearDownload();
+			dispatchEvent(new Event("downloadCancel"));
+		}
+		
+		// Get download progress
+		private function onDownloadProgress(event:ProgressEvent):void 
+		{
+			var numPerc:Number = Math.round((event.bytesLoaded / event.bytesTotal) * 100);
+			updateProgBar(numPerc);
+			var evt:ProgressEvent = new ProgressEvent("downloadProgress", false, false, event.bytesLoaded, event.bytesTotal);
+			dispatchEvent(evt);
+		}
+		
+		// Update progBar
+		private function updateProgBar(numPerc:Number = 0):void 
+		{
+			var strLabel:String = (m_numCurrentDownload + 1) + "/" + m_arrDownloadFiles.length;
+			strLabel = (m_numCurrentDownload + 1 <= m_arrDownloadFiles.length && numPerc > 0 && numPerc < 100) ? numPerc + "% - " + strLabel : strLabel;
+			strLabel = (m_numCurrentDownload + 1 == m_arrDownloadFiles.length && numPerc == 100) ? "Download Complete - " + strLabel : strLabel;
+			strLabel = (m_arrDownloadFiles.length == 0) ? "" : strLabel;
+			progBar.label = strLabel;
+			progBar.setProgress(numPerc, 100);
+			progBar.validateNow();
+		}
+		
+		// Called on download complete
+		public function onDownloadComplete():void 
+		{
+			m_numCurrentDownload++;				
+			if (m_numCurrentDownload < m_arrDownloadFiles.length) 
+			{
+				startDownload();
+			} 
+			else 
+			{
+				enableUI();
+				clearDownload();
+				dispatchEvent(new Event("downloadComplete"));
+			}
+		}
+		
+		// Called on download io error
+		private function onDownloadIoError(event:IOErrorEvent):void 
+		{
+			clearDownload();
+			var evt:IOErrorEvent = new IOErrorEvent("downloadIoError", false, false, event.text);
+			dispatchEvent(evt);
+		}
+		
+		// Called on download security error
+		private function onDownloadSecurityError(event:SecurityErrorEvent):void 
+		{
+			clearDownload();
+			var evt:SecurityErrorEvent = new SecurityErrorEvent("downloadSecurityError", false, false, event.text);
+			dispatchEvent(evt);
+		}
+		
+		private function selectCalc(event:Event):void 
+		{
+			m_sCalcName = calcCbx.selectedItem.calcName.toString();
+        } 
+        			
+		private function addFiles(event:Event):void 
+		{
+        	m_requester.fileListRequest(m_sCalcName);
+        } 			
+
+    ]]>
+ </mx:Script>
+
+    <jwolib:Pod 
+    	id="pod" 
+		title="Download CRM input files" 
+		titleIcon="@Embed('assets/download.gif')"
+        width="100%" 
+        height="100%" 
+        headerHeight="40"
+        >
+        
+        <jwolib:titleBarChildren>
+            <mx:ComboBox 
+            	id="calcCbx"
+				prompt="Please select a Project..."       			
+       			change="selectCalc(event);"
+       			selectedIndex="-1"
+       			labelField="calcName"
+            	/>
+        </jwolib:titleBarChildren>	
+	
+	<mx:Canvas width="100%" height="100%">
+		<mx:DataGrid 
+			id="listFiles" 
+			width="100%"
+			left="0" 
+			top="0" 
+			bottom="0" 
+			right="0"
+			allowMultipleSelection="true" 
+			verticalScrollPolicy="on"
+			draggableColumns="false" 
+			resizableColumns="false" 
+			sortableColumns="false"
+			>
+			<mx:columns>
+				<mx:DataGridColumn headerText="File name" dataField="name" textAlign="left"/>
+				<mx:DataGridColumn headerText="Size" dataField="size" textAlign="right"/>
+			</mx:columns>
+		</mx:DataGrid>
+	</mx:Canvas>
+	<mx:ControlBar horizontalAlign="center" verticalAlign="middle">
+		<mx:Button id="btnAdd" toolTip="Add file(s)" click="addFiles(event)" icon="@Embed('assets/add.png')" width="26"/>
+		<mx:Button id="btnRemove" toolTip="Remove file(s)" click="removeFiles()" icon="@Embed('assets/delete.png')" width="26"/>
+		<mx:ProgressBar id="progBar" mode="manual" label="" labelPlacement="center" width="100%"/>
+		<mx:Button id="btnCancel" toolTip="Cancel download" icon="@Embed('assets/cancel2.png')" width="26" click="onDownloadCanceled()"/>
+		<mx:Button 
+			width="26" 
+			toolTip="Download file(s)" 
+			id="btnDownload" 
+			click="openDirectory(event)" 
+			icon="@Embed('assets/download.gif')"
+			/>
+	</mx:ControlBar>	
+	</jwolib:Pod>
+</mx:Canvas>	

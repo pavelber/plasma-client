@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:WindowedApplication xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" 
+	title="FAC Results Processing"
+	showFlexChrome="false"
+	showStatusBar="false"
+	paddingTop="-4" 
+	paddingBottom="-12" 
+	paddingLeft="-8" 
+	paddingRight="-8"
+	xmlns:com="components.*"
+	width="420" 
+	height="350"
+	xmlns:ui="ui.*"
+	xmlns:components="components.*" 
+	xmlns:local="*"
+	>
+	
+	<mx:Style source="styles.css"/>
+<!--	
+	<mx:Style source="styles.css"/>
+	<mx:Style source="style/style.css"/>
+-->	
+	<mx:Script>
+		<![CDATA[
+			import components.control.Requester;
+			
+			import constants.ServerConstants;
+			
+			import mx.containers.ControlBar;
+			import mx.containers.Panel;
+			import mx.containers.VBox;
+			import mx.controls.Alert;
+			import mx.controls.ComboBox;
+			import mx.controls.Spacer;
+			import mx.events.FlexNativeMenuEvent;
+			import mx.managers.PopUpManager;
+		
+		private const m_strDomain:String = ServerConstants.SERVER_NAME;
+		private const m_strUploadScript:String = 
+				new String(m_strDomain + ServerConstants.UPLOAD_REQUEST_NAME);
+		private const m_strDownloadScript:String = 
+				new String(m_strDomain + ServerConstants.DOWNLOAD_REQUEST_NAME);
+				
+		private const m_strCalcCreatorScript:String = 
+				new String(m_strDomain + ServerConstants.CREATE_CALC_TO_DB_REQUEST_NAME);
+				
+		private const m_strStructureInserterScript:String = 
+				new String(m_strDomain + ServerConstants.STRUCTURE_TO_DB_REQUEST_NAME);
+				
+		private const m_strTransInserterScript:String = 
+				new String(m_strDomain + ServerConstants.TRANSITIONS_TO_DB_REQUEST_NAME);
+				
+		private const m_fitInserterScript:String = 
+				new String(m_strDomain + ServerConstants.FITS_TO_DB_REQUEST_NAME);
+				
+		private const m_strCrmMakerScript:String = 
+				new String(m_strDomain + ServerConstants.DB2CRM_REQUEST_NAME);
+
+		private const m_strSQLQueryScript:String = 
+				new String(m_strDomain + ServerConstants.SQL_REQUEST_NAME);
+				
+		private function toggleMaximize () : void 
+		{
+			if (nativeWindow.displayState == NativeWindowDisplayState.MAXIMIZED) 
+			{
+				restore();
+			}
+			else 
+			{
+				maximize();
+			}
+		}
+			
+			[Bindable]private var _totalRecords:int = 6 ;
+			
+			private function onPageChange(event:PageEvent):void
+			{
+				var processNum:int = event.pageNumber;
+				switch(processNum)
+				{
+					case 1:
+						myViewStack.selectedChild=uploader;
+						break;
+					case 2:
+						myViewStack.selectedChild=calcCreator;
+						break;
+					case 3:
+						myViewStack.selectedChild=transInserter;
+						break;
+					case 4:
+						myViewStack.selectedChild=fitInserter;
+						break;
+					case 5: 
+						myViewStack.selectedChild=crmMaker;
+						break;
+					case 6:
+						myViewStack.selectedChild=downloader;
+						break;
+					default:
+						break;
+					
+				}
+			}
+
+		]]>
+	</mx:Script>
+
+	
+	
+	<mx:Canvas 
+		width="100%" 
+		height="100%" 
+		styleName="appContainer"
+		>
+		
+		<!-- The Window Header -->
+		<local:PageBar 
+			id="pageBar" 
+			dock="true" 
+			autoLayout="true" 
+			totalRecords="{_totalRecords}" 
+			width="100%" 
+			pageChange="onPageChange(event)"
+			/> 				
+		
+		<!-- The main part of the window & drop area. -->
+		<mx:Canvas 
+			id="container" 
+			width="100%" 
+			height="100%" 
+			styleName="container"  
+			backgroundSize="100%" 
+			top="53" 
+			left="10" 
+			right="10" 
+			bottom="28" 
+			paddingTop="1" 
+			paddingLeft="2" 
+			paddingBottom="2" 
+			paddingRight="2"
+			>
+	        <mx:ViewStack 
+	        	id="myViewStack" 
+	        	width="100%" 
+	        	height="100%" 
+	        	>
+	            <mx:VBox 
+	            	id="uploader" 
+	            	label="Upload" 
+	            	width="100%" 
+	            	height="100%" 
+	            	>
+					<com:FileUploader
+						width="100%" 
+						height="100%"
+						uploadUrl="{m_strUploadScript}"
+						historyFile="{ServerConstants.HISTORY_FILE}"
+						uploadComplete="Alert.show('File(s) have been uploaded.', 'Upload successful')" 
+						uploadIOError="Alert.show('IO Error in uploading file.', 'Error')" 
+						uploadSecurityError="Alert.show('Security Error in uploading file.', 'Error')"
+						/>
+	            </mx:VBox>
+	            <mx:VBox 
+	            	id="downloader" 
+	            	label="Download" 
+	            	width="100%" 
+	            	height="100%" 
+	            	>
+					<com:FileDownloader
+						width="100%" 
+						height="100%"
+						downloadUrl="{m_strDownloadScript}"
+						downloadComplete="Alert.show('File(s) have been downloaded.', 'Download successful')" 
+						downloadIOError="Alert.show('IO Error in downloading file.', 'Error')" 
+						downloadSecurityError="Alert.show('Security Error in downloading file.', 'Error')"
+						/>
+	            </mx:VBox>
+	            <mx:VBox 
+	            	id="calcCreator" 
+	            	label="Create project to DataBase" 
+	            	width="100%" 
+	            	height="100%" 
+	            	>
+					<com:CalcToDbCreator
+						width="100%" 
+						height="100%"
+						calcCreatorUrl="{m_strCalcCreatorScript}"
+						structureInserterUrl="{m_strStructureInserterScript}"
+						/>
+	            </mx:VBox>
+	            <mx:VBox 
+	            	id="transInserter" 
+	            	label="Add transitions to DataBase" 
+	            	width="100%" 
+	            	height="100%" 
+	            	>
+					<com:TransToDbInserter
+						width="100%" 
+						height="100%"
+						transInserterUrl="{m_strTransInserterScript}"
+						/>
+	            </mx:VBox>
+	            <mx:VBox 
+	            	id="fitInserter" 
+	            	label="Add cross-sections to DataBase" 
+	            	width="100%" 
+	            	height="100%" 
+	            	>
+					<com:FitToDbInserter
+						width="100%" 
+						height="100%"
+						fitInserterUrl="{m_fitInserterScript}"
+						/>
+	            </mx:VBox>
+	            <mx:VBox 
+	            	id="crmMaker" 
+	            	label="Make CRM" 
+	            	width="100%" 
+	            	height="100%" 
+	            	>
+					<com:CrmFromDbMaker
+						width="100%" 
+						height="100%"
+						db2CrmUrl="{m_strCrmMakerScript}"
+						/>
+	            </mx:VBox>
+<!--				
+	            <mx:VBox 
+	            	id="sqlProcessor" 
+	            	label="SQL Browser" 
+	            	width="100%" 
+	            	height="100%" 
+	            	>
+					<com:SqlProcessor
+						width="100%" 
+						height="100%"
+						sqlQueryUrl="{m_strSQLQueryScript}"
+						/>
+	            </mx:VBox>
+-->				
+				
+	        </mx:ViewStack>
+		</mx:Canvas>
+	</mx:Canvas>	
+
+	
+
+</mx:WindowedApplication>

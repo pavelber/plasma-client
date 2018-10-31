@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<files>
+  <file>
+    <name>IN1R.INP</name>
+  </file>
+  <file>
+    <name>IN1F.INP</name>
+  </file>
+  <file>
+    <name>AUTO.INP</name>
+  </file>
+  <file>
+    <name>BCFP.INP</name>
+  </file>
+  <file>
+    <name>EXCIT.INP</name>
+  </file>
+  <file>
+    <name>RREC.INP</name>
+  </file>
+  <file>
+    <name>SPECTR.INP</name>
+  </file>
+  <file>
+    <name>IONS.INP</name>
+  </file>
+</files>

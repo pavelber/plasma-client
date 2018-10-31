@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:ApplicationControlBar 
+	xmlns:mx="http://www.adobe.com/2006/mxml" 
+	
+	width="100%"
+	dock="true" 
+	autoLayout="true" 
+	
+	
+	>
+<mx:Metadata>
+	[Event(name="pageChange", type="PageEvent")]
+</mx:Metadata>
+
+
+	<mx:Script>
+		<![CDATA[
+			//import com.subeesh.events.PageEvent;
+			import mx.collections.ArrayCollection;
+			
+			private var _totalRecords:int = 0;
+			[Bindable]
+			private var _totalPages :int = 6; 
+			[Bindable]
+			private var _pageCount:int = 40;
+			[Bindable]
+			private var _currentPageNumber:int = 1;
+			[Bindable]
+			private var _currentPageName:String = "Uploading";
+
+			[Bindable]
+			private var _pages:ArrayCollection;
+			
+			private var _pageNames:Array = 
+				[
+					"Uploading",
+					"Levels Inserting",
+					"Transitions Inserting",
+					"Fits Inserting",
+					"Files Making",
+					"Downloading"
+				];
+			
+			public function set totalRecords(total:int) :  void {
+				_totalRecords = total;
+				createPagesDropDown();
+			}
+			
+			public function get totalRecords():int
+			{
+				return _totalRecords;
+			}
+
+			public function get currentPageName() : String {
+				return _currentPageName;
+			}
+			
+			public function set currentPageName(pageName:String) : void {
+				_currentPageName = pageName ;
+				pageCombo.selectedIndex = 0;
+			}
+			
+			public function get currentPageNumber() : int {
+				return _currentPageNumber;
+			}
+			
+			public function set currentPageNumber(pageNumber:int) : void {
+				_currentPageNumber = pageNumber ;
+				pageCombo.selectedIndex = 0;
+			}
+			
+			public function set pageCount ( count: int ) :void {
+				_pageCount = count;
+				createPagesDropDown();
+			}
+			
+			public function get pageCount () : int {
+				return _pageCount;
+			}
+			
+			private function onInit() : void {
+				_currentPageNumber = pageCombo.selectedItem.pageNumber ; 
+				_currentPageName = pageCombo.selectedItem.pageName ; 
+			}
+			
+			private function pageChanged () : void {
+				_currentPageNumber = pageCombo.selectedItem.pageNumber ; 
+				_currentPageName = pageCombo.selectedItem.pageName ; 
+				dispatch();
+			}
+			
+			private function onNextClick() : void {
+				if ( _currentPageNumber != _totalPages ) 
+				{
+					pageCombo.selectedIndex++;
+					_currentPageNumber = pageCombo.selectedItem.pageNumber ; 
+					_currentPageName = pageCombo.selectedItem.pageName ; 
+					dispatch();
+				}
+			}
+			
+			private function onPrevButtonClick () : void {
+				if( _currentPageNumber != 1 ) 
+				{
+					pageCombo.selectedIndex--;
+					_currentPageNumber = pageCombo.selectedItem.pageNumber ;
+					_currentPageName = pageCombo.selectedItem.pageName ; 
+					dispatch();
+				}
+			}
+			
+			private function createPagesDropDown() : void {
+				//_totalPages = 0;
+				_pages = new ArrayCollection();
+				//_totalPages = Math.ceil(_totalRecords/_pageCount);
+				for ( var i: int = 0 ; i < _totalPages ; i ++ ) {
+					var obj: Object = new Object();
+					obj.pageNumber = i  + 1;
+					obj.pageName = _pageNames[i];
+					_pages.addItem(obj); 
+				}
+				
+				if(_currentPageNumber <= _pages.length )
+					pageCombo.selectedIndex = _currentPageNumber - 1 ;
+			}
+			
+			private function dispatch() : void {
+				var evt:PageEvent = new PageEvent(_currentPageNumber,"pageChange");
+				dispatchEvent(evt);
+			}
+			
+		]]>
+	</mx:Script>
+
+<mx:Button id="prev" label="&lt;&lt;" alpha="{prev.enabled ? 1 : 0.5 }"  click="onPrevButtonClick()" toolTip="Previous process" enabled="{_currentPageNumber != 1}"/>
+<mx:ComboBox height="{prev.height}"  dataProvider="{_pages}" width="150" change="pageChanged()" id="pageCombo"  labelField="pageName"  enabled="{_pages.length > 0 }"/>
+<mx:Button id="next" label=">>" alpha="{next.enabled ? 1 : 0.5 }"  click="onNextClick()" toolTip="Next process" enabled="{_currentPageNumber &lt; _totalPages }" />	
+<mx:Label fontWeight="bold" text="{'Process ' + _currentPageNumber + ' of ' + _totalPages } " />
+</mx:ApplicationControlBar>
